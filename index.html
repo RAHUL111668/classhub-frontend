@@ -1430,27 +1430,36 @@ function previewStudentPhoto(event) {
 }
 
 async function addStudent() {
- const name = studentName.value.trim();
- const role = studentRole.value;
- const desc = studentDesc.value.trim();
 
- if(!name){showToast('Enter name','error');return;}
+ const name = document.getElementById("studentName").value.trim();
+ const role = document.getElementById("studentRole").value;
+ const desc = document.getElementById("studentDesc").value.trim();
+
+ if(!name){
+  showToast("Enter name","error");
+  return;
+ }
 
  await fetch(API+"/students",{
   method:"POST",
   headers:{ "Content-Type":"application/json"},
-  body:JSON.stringify({name,role,desc,photo:tempStudentPhoto})
+  body:JSON.stringify({
+   name:name,
+   role:role,
+   desc:desc,
+   photo:tempStudentPhoto
+  })
  });
 
- studentName.value='';
- studentDesc.value='';
- studentPhoto.value='';
- photoPreview.style.display='none';
+ document.getElementById("studentName").value="";
+ document.getElementById("studentDesc").value="";
+ document.getElementById("studentPhoto").value="";
+ document.getElementById("photoPreview").style.display="none";
  tempStudentPhoto=null;
 
  renderStudents();
  updateStats();
- showToast(name+" joined!");
+ showToast(name+" added!");
  launchConfetti();
 }
 
@@ -1466,7 +1475,7 @@ function removeStudent(id) {
 
 function renderStudents(){
  fetch(API+"/students").then(r=>r.json()).then(students=>{
-  const grid=studentsGrid;
+  const grid=document.getElementById("studentsGrid");
 
   if(!students.length){
    grid.innerHTML='<div class="empty-state"><span class="empty-icon">👥</span><p>No students yet</p></div>';
@@ -1485,7 +1494,6 @@ function renderStudents(){
   `).join("");
  });
 }
-
 
 // ==================== COURSES ====================
 const courseEmojis = ['&#128218;','&#128187;','&#128200;','&#9883;','&#127891;','&#128300;','&#127912;','&#128202;','&#128161;','&#128640;'];
@@ -2003,3 +2011,4 @@ console.log('  InteractionTracker.clear() - Clear all interaction data');
 </script>
 </body>
 </html>
+
