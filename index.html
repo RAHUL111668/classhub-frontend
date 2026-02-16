@@ -1134,11 +1134,10 @@
 </main>
 
 <script>
-// ==================== DATA STORE ====================
-const DB = {
-  get(key, def=[]) { try { return JSON.parse(localStorage.getItem('cv_'+key)) || def; } catch { return def; } },
-  set(key, val) { localStorage.setItem('cv_'+key, JSON.stringify(val)); }
-};
+  
+const API = "https://classhub-backend-ron1.onrender.com";
+
+
 
 // ==================== INTERACTION TRACKER ====================
 const InteractionTracker = {
@@ -1429,40 +1428,36 @@ function previewStudentPhoto(event) {
   reader.readAsDataURL(file);
 }
 
-async function addStudent() {
+function addStudent() {
+  const name = document.getElementById('studentName').value.trim();
+  const role = document.getElementById('studentRole').value;
+  const desc = document.getElementById('studentDesc').value.trim();
 
- const name = document.getElementById("studentName").value.trim();
- const role = document.getElementById("studentRole").value;
- const desc = document.getElementById("studentDesc").value.trim();
+  if(!name) { showToast('Enter a name!','error'); return; }
 
- if(!name){
-  showToast("Enter name","error");
-  return;
- }
+  const students = DB.get('students');
+  students.push({
+    id: Date.now(),
+    name,
+    role,
+    desc: desc || 'No description yet',
+    photo: tempStudentPhoto,
+    color: avatarColors[Math.floor(Math.random()*avatarColors.length)]
+  });
+  DB.set('students', students);
 
- await fetch(API+"/students",{
-  method:"POST",
-  headers:{ "Content-Type":"application/json"},
-  body:JSON.stringify({
-   name:name,
-   role:role,
-   desc:desc,
-   photo:tempStudentPhoto
-  })
- });
+  // Reset form
+  document.getElementById('studentName').value = '';
+  document.getElementById('studentDesc').value = '';
+  document.getElementById('studentPhoto').value = '';
+  document.getElementById('photoPreview').style.display = 'none';
+  tempStudentPhoto = null;
 
- document.getElementById("studentName").value="";
- document.getElementById("studentDesc").value="";
- document.getElementById("studentPhoto").value="";
- document.getElementById("photoPreview").style.display="none";
- tempStudentPhoto=null;
-
- renderStudents();
- updateStats();
- showToast(name+" added!");
- launchConfetti();
+  renderStudents();
+  updateStats();
+  showToast(name + ' joined the squad!');
+  launchConfetti();
 }
-
 
 function removeStudent(id) {
   let students = DB.get('students');
@@ -1473,26 +1468,24 @@ function removeStudent(id) {
   showToast('Student removed','info');
 }
 
-function renderStudents(){
- fetch(API+"/students").then(r=>r.json()).then(students=>{
-  const grid=document.getElementById("studentsGrid");
-
-  if(!students.length){
-   grid.innerHTML='<div class="empty-state"><span class="empty-icon">👥</span><p>No students yet</p></div>';
-   return;
+function renderStudents() {
+  const students = DB.get('students');
+  const grid = document.getElementById('studentsGrid');
+  if(students.length === 0) {
+    grid.innerHTML = '<div class="empty-state"><span class="empty-icon">&#128101;</span><p>No students yet. Add your classmates!</p></div>';
+    return;
   }
-
-  grid.innerHTML=students.map(s=>`
-   <div class="student-card">
-    <div class="student-avatar" style="background:#6c5ce7">
-     ${s.photo?`<img src="${s.photo}">`:s.name[0]}
+  grid.innerHTML = students.map(s => `
+    <div class="student-card">
+      <button class="remove-btn" onclick="removeStudent(${s.id})">&times;</button>
+      <div class="student-avatar" style="background:${s.color}">
+        ${s.photo ? `<img src="${s.photo}" alt="${escHtml(s.name)}">` : s.name.charAt(0).toUpperCase()}
+      </div>
+      <h3>${escHtml(s.name)}</h3>
+      <div class="role">${escHtml(s.role)}</div>
+      <div class="desc">"${escHtml(s.desc || 'No description yet')}"</div>
     </div>
-    <h3>${escHtml(s.name)}</h3>
-    <div class="role">${escHtml(s.role)}</div>
-    <div class="desc">"${escHtml(s.description||'')}"</div>
-   </div>
-  `).join("");
- });
+  `).join('');
 }
 
 // ==================== COURSES ====================
@@ -1671,20 +1664,32 @@ function handleMemeUpload(e) {
   if(e.target.files.length) processMemeFile(e.target.files[0]);
 }
 
-async function processMemeFile(file){
- const reader=new FileReader();
- reader.onload=async e=>{
-  await fetch(API+"/memes",{method:"POST",headers:{"Content-Type":"application/json"},
-  body:JSON.stringify({
-   caption:memeCaption.value||"No caption",
-   author:memeAuthor.value||"Anon",
-   image:e.target.result
-  })});
-  memeCaption.value='';
-  memeAuthor.value='';
-  renderMemes();
- };
- reader.readAsDataURL(file);
+function processMemeFile(file) {
+  if(!file.type.startsWith('image/')) { showToast('Only images allowed!','error'); return; }
+  if(file.size > 5 * 1024 * 1024) { showToast('File too large! Max 5MB.','error'); return; }
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const caption = document.getElementById('memeCaption').value.trim() || 'No caption';
+    const author = document.getElementById('memeAuthor').value.trim() || 'Anonymous';
+    const memes = DB.get('memes');
+    memes.unshift({
+      id: Date.now(),
+      data: e.target.result,
+      caption,
+      author,
+      reactions: { fire: 0, laugh: 0, skull: 0, heart: 0 },
+      timestamp: new Date().toISOString()
+    });
+    DB.set('memes', memes);
+    document.getElementById('memeCaption').value = '';
+    document.getElementById('memeAuthor').value = '';
+    document.getElementById('memeFileInput').value = '';
+    renderMemes();
+    updateStats();
+    showToast('Meme uploaded!');
+    launchConfetti();
+  };
+  reader.readAsDataURL(file);
 }
 
 function reactToMeme(memeId, reaction) {
@@ -1714,27 +1719,50 @@ function deleteMeme(id) {
   showToast('Meme deleted','info');
 }
 
-function renderMemes(){
- fetch(API+"/memes").then(r=>r.json()).then(memes=>{
-  memesGrid.innerHTML=memes.map(m=>`
-   <div class="meme-card">
-    <img src="${m.image}">
-    <div class="meme-info">
-     <div class="caption">${escHtml(m.caption)}</div>
+function renderMemes() {
+  const memes = DB.get('memes');
+  const grid = document.getElementById('memesGrid');
+  if(memes.length === 0) {
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><span class="empty-icon">&#128248;</span><p>No memes yet. Be the first to upload!</p></div>';
+    return;
+  }
+  const userReacts = DB.get('meme_reacts', {});
+  grid.innerHTML = memes.map(m => `
+    <div class="meme-card">
+      <button class="delete-meme" onclick="deleteMeme(${m.id})">&times;</button>
+      <img src="${m.data}" alt="${escHtml(m.caption)}" loading="lazy">
+      <div class="meme-info">
+        <div class="caption">${escHtml(m.caption)}</div>
+        <div class="author">by ${escHtml(m.author)} &middot; ${timeAgo(m.timestamp)}</div>
+        <div class="meme-reactions">
+          <button class="meme-react-btn ${userReacts[m.id+'_fire']?'active':''}" onclick="reactToMeme(${m.id},'fire')">&#128293; ${m.reactions.fire||0}</button>
+          <button class="meme-react-btn ${userReacts[m.id+'_laugh']?'active':''}" onclick="reactToMeme(${m.id},'laugh')">&#128514; ${m.reactions.laugh||0}</button>
+          <button class="meme-react-btn ${userReacts[m.id+'_skull']?'active':''}" onclick="reactToMeme(${m.id},'skull')">&#128128; ${m.reactions.skull||0}</button>
+          <button class="meme-react-btn ${userReacts[m.id+'_heart']?'active':''}" onclick="reactToMeme(${m.id},'heart')">&#128151; ${m.reactions.heart||0}</button>
+        </div>
+      </div>
     </div>
-   </div>
-  `).join("");
- });
+  `).join('');
 }
-
 
 // ==================== CONFESSIONS ====================
-function addConfession(){
- fetch(API+"/confessions",{method:"POST",headers:{"Content-Type":"application/json"},
- body:JSON.stringify({text:confessionText.value})})
- .then(()=>{confessionText.value='';renderConfessions();});
+function addConfession() {
+  const text = document.getElementById('confessionText').value.trim();
+  if(!text) { showToast('Write something first!','error'); return; }
+  if(text.length < 5) { showToast('Too short!','error'); return; }
+  const confessions = DB.get('confessions');
+  confessions.unshift({
+    id: Date.now(),
+    text,
+    reactions: { heart: 0, haha: 0, shock: 0, relate: 0 },
+    timestamp: new Date().toISOString()
+  });
+  DB.set('confessions', confessions);
+  document.getElementById('confessionText').value = '';
+  renderConfessions();
+  updateStats();
+  showToast('Confession posted anonymously!');
 }
-
 
 function reactToConfession(id, reaction) {
   const confessions = DB.get('confessions');
@@ -1753,16 +1781,29 @@ function deleteConfession(id) {
   updateStats();
 }
 
-function renderConfessions(){
- fetch(API+"/confessions").then(r=>r.json()).then(c=>{
-  confessionsList.innerHTML=c.map(x=>`
-   <div class="confession-card">
-    <div class="confession-text">"${escHtml(x.text)}"</div>
-   </div>
-  `).join("");
- });
+function renderConfessions() {
+  const confessions = DB.get('confessions');
+  const list = document.getElementById('confessionsList');
+  if(confessions.length === 0) {
+    list.innerHTML = '<div class="empty-state"><span class="empty-icon">&#128172;</span><p>No confessions yet. Be brave and confess!</p></div>';
+    return;
+  }
+  list.innerHTML = confessions.map(c => `
+    <div class="confession-card">
+      <button class="remove-btn" style="opacity:0.5;position:absolute;top:10px;right:10px;" onclick="deleteConfession(${c.id})">&times;</button>
+      <div class="confession-text">"${escHtml(c.text)}"</div>
+      <div class="confession-meta">
+        <span class="time">&#128123; Anonymous &middot; ${timeAgo(c.timestamp)}</span>
+        <div class="confession-reacts">
+          <button class="confession-react-btn" onclick="reactToConfession(${c.id},'heart')">&#10084;&#65039; ${c.reactions.heart||0}</button>
+          <button class="confession-react-btn" onclick="reactToConfession(${c.id},'haha')">&#128514; ${c.reactions.haha||0}</button>
+          <button class="confession-react-btn" onclick="reactToConfession(${c.id},'shock')">&#128562; ${c.reactions.shock||0}</button>
+          <button class="confession-react-btn" onclick="reactToConfession(${c.id},'relate')">&#129309; ${c.reactions.relate||0}</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
 }
-
 
 // ==================== TRUTH OR DARE SPINNER ====================
 const truths = [
@@ -1978,12 +2019,18 @@ function timeAgo(iso) {
   return days + 'd ago';
 }
 
-function updateStats(){
- fetch(API+"/students").then(r=>r.json()).then(s=>statStudents.textContent=s.length);
- fetch(API+"/memes").then(r=>r.json()).then(m=>statMemes.textContent=m.length);
- fetch(API+"/confessions").then(r=>r.json()).then(c=>statConfessions.textContent=c.length);
-}
+function updateStats() {
+  document.getElementById('statStudents').textContent = DB.get('students').length;
+  document.getElementById('statMemes').textContent = DB.get('memes').length;
+  document.getElementById('statConfessions').textContent = DB.get('confessions').length;
 
+  let totalVotes = 0;
+  pollCategories.forEach(cat => {
+    const votes = DB.get('poll_'+cat.id, {});
+    totalVotes += Object.values(votes).reduce((a,b) => a+b, 0);
+  });
+  document.getElementById('statVotes').textContent = totalVotes;
+}
 
 // ==================== INIT ====================
 function init() {
@@ -2011,4 +2058,3 @@ console.log('  InteractionTracker.clear() - Clear all interaction data');
 </script>
 </body>
 </html>
-
